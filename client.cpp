@@ -9,15 +9,15 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <fstream>
 
 #include "client.h"
-#include "consts.h"
 #include "command.h"
+#include "io_tools.h"
 
 using namespace std;
 
 static bool ini = false; //Has help been initialized yet?
+static bool daemon_started = false;
 
 static void parse(vector<string> command){
 	string body = command[0];
@@ -28,7 +28,23 @@ static void parse(vector<string> command){
 		}
 		help(command);
 		return;
-	}else{ 
+	} else if(body == "start") {
+		if (!daemon_started){
+			daemon_started = start_daemon();
+		} else {
+			cout << "The daemon is already running" << endl;
+		}
+	} else if(body == "stop") {
+		if (daemon_started) {
+			daemon_started = stop_daemon();
+		} else {
+			cout << "The daemon isn't running" << endl;
+		}
+	} else if(body == "add") {
+		add(command);
+	} else if(body == "remove") {
+		remove(command);
+	} else { 
 		cout << "unknown command : " <<command[0]<<endl;
 		cout << "Try 'help' for a list of available commands" <<endl;
 	}
@@ -36,9 +52,14 @@ static void parse(vector<string> command){
 
 int start(){
 	bool quit = false;
+	pid_t pid = get_pid();
 
 	cout << "Welcome to rip! Use help to get a list of available commands";
 	cout << endl;
+	if (pid) {
+		daemon_started = true;
+		cout << "The daemon is up and running under the pid " << pid << " !" << endl;
+	}
 
 	while (!quit){
 		cout << ">>";

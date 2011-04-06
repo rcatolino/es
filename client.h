@@ -1,3 +1,5 @@
+#if ! defined ( CLIENT )
+#define CLIENT
 
 #include <string>
 
@@ -12,4 +14,4 @@ int get(string name, string type=0);
 int search(string name, string type);
 
 
-
+#endif
