@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <cstdlib>
+#include "if.h"
 
 
 #include "io_tools.h"
@@ -29,6 +31,8 @@ pid_t get_pid(pid_t* pid, key_t* key){
 	ifstream pid_file(ripd_pid,ios::in | ios::binary);
 	if (pid_file.fail()){
 		pid_file.clear(ios::failbit);
+		*pid = 0;
+		*key = 0;
 		return -1;
 	}
 	pid_file.read((char*) pid, sizeof(pid_t));
@@ -44,7 +48,7 @@ int dump(map<string,item> * items) {
 	}
 	for (map<string,item>::iterator it = items->begin() ; it != items->end() ; it++) {
 		index << it->first << " " << it->second.type << " " << it->second.path;
-		index << " " << it->second.message << endl;
+		index << " " << it->second.size << " " << it->second.message << endl;
 	}
 	index.close();
 	return 0;
@@ -64,9 +68,11 @@ int restore(map<string,item> * items) {
 		string type(buff);
 		index.getline(buff,255,' ');
 		string path(buff);
+		index.getline(buff,255,' ');
+		long size = strtol(buff,NULL,10);
 		index.getline(buff,255);
 		string message(buff);
-		struct item new_item = {type,path,message};
+		struct item new_item = {name,type,path,size,message};
 		if (!name.empty()){
 			(*items)[name]=new_item;
 		}

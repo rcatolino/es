@@ -46,7 +46,7 @@ void* thread_action(void* out) {
 	return NULL;
 
 }
-int init_ripd() {
+int init_ripd(int semid) {
 	sid = setsid();
 	if (sid == -1) {
 	//fail to obtain a session id => die
@@ -68,7 +68,9 @@ int init_ripd() {
 		//fail to create msg queue : die
 		end_daemon(-5);
 	}
-	if(write_pid(pid,key)){
+	int ret = write_pid(pid,key);
+	semop(semid,&give,1); //restart parent
+	if(ret){
 		//We couldn't notify that we started the daemon successfuly =>
 		out << "Cannot write to ripd_pid file, stoping the daemon," << endl;
 		out << "please ensure you have write permission and try again" << endl;
@@ -83,6 +85,7 @@ int init_ripd() {
 	}
 	for (unsigned int i=0 ; i < 5 ; i++) {
 		out << "thread_launcher working" << endl;
+
 		sleep(10);
 	}
 

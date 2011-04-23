@@ -8,19 +8,20 @@
 #include <map>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <signal.h>
 
 #include "ripd.h"
 #include "io_tools.h"
 #include "panic.h"
+#include "if.h"
 
 using namespace std;
 
 static map<string,item> items;
 static unsigned int pending_op = 0;
 static map<string,string> help_list;
-static pid_t pid;
-static key_t key;
+static int msgid = 0;
 
 void ini_help(){
 	string help = "help [command] : Display help about the required command\n";
@@ -102,17 +103,26 @@ bool stop_daemon(){
 }
 
 bool start_daemon(){
+	int semid = semget(IPC_PRIVATE,1,IPC_CREAT);
+	semctl(semid,0,0); //set the sem to 0;
 	pid = fork();
 	if(pid < 0){
 		cout << "Error while starting daemon" << endl;
 		return false;
 	} else if (pid == 0) {
 		//child
-		init_ripd();
+		init_ripd(semid);
 		return true;
 	} else {
 		//parent
+		semop(semid,&take,1); // block parent until child put a token in the semaphore
 		cout << "Daemon started successfully!" << endl;
+		key_t key;
+		get_pid(NULL,&key);
+		msgid = msgget(key,0); 
+		if (msgid == -1) {
+			cout << "Failed to contact daemon" << endl;
+		}
 		return true;
 	}
 	return true;
@@ -139,6 +149,29 @@ unsigned int search(vector<string> * names, vector<item> * elements, string name
 	return 0;
 }
 
+void search(vector<string> command, int client_msgid) {
+	if (msg_id == 0) {
+		//we don't have the message box id, let's use the one frome the client
+		if (client_msgid == 0) {
+			//the client doesn't have any good value either, that's not supose to be possible..
+			cout << "Error while contacting daemon" << endl;
+		} else {
+			msgid = client_msgid;
+		}
+	}
+	//contrary to display this command search on remote ends, therefore the daemon should be up and running
+	pid_t pid;
+	key_t key;
+	if ( get_pid(&pid,&key) <= 0 ) {
+		//couldn't read from file, maybe it hasn't been created yet.
+		cout << "The daemon doesn't seem to be running, you have to start it before searching files" << endl;
+		return;
+	}
+	/* Have to choos between the two solutions !!!*/
+}	
+
+	
+
 void add_file(string name, item to_add) {
 	string new_name = name;
 	ifstream test(to_add.path.c_str(),ios::in);//test wether the file to add exists or not
@@ -147,6 +180,9 @@ void add_file(string name, item to_add) {
 		cout << name << " doesn't exist or you don't have read permission on it." << endl;
 		return;
 	} else {
+		struct stat stats;
+		stat(to_add.path.c_str(),&stats);
+		to_add.size = stats.st_size; 
 		for (;;){
 			map<string,item>::iterator it = items.find(new_name); //does a file with 
 																  //the same name exists?

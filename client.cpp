@@ -17,6 +17,7 @@
 using namespace std;
 
 static bool daemon_started = false;
+static int msgid = 0;
 
 static void parse(vector<string> command){
 	string body = command[0];
@@ -41,6 +42,8 @@ static void parse(vector<string> command){
 		display(command);
 	} else if(body == "remove") {
 		remove(command);
+	} else if(body == "search") {
+		search(command,msgid);
 	} else { 
 		cout << "unknown command : " <<command[0]<<endl;
 		cout << "Try 'help' for a list of available commands" <<endl;
@@ -51,18 +54,22 @@ int start(){
 	bool quit = false;
 	key_t key;
 	pid_t pid;
-	get_pid(&pid,&key); //get pid of running daemon, 0 if no daemon running
+	get_pid(&pid,&key); //get pid of running daemon, and key of msg box. 0 if no daemon running
 
 	cout << "Welcome to rip! Use help to get a list of available commands";
 	cout << endl;
 
-	ini_help(); //initialize help, cf command.cpp
+	ini_help(); //initialize help
 
 	read_index(); //restore index from hard drive
 
 	if (pid) {
 		daemon_started = true;
 		cout << "The daemon is up and running under the pid " << pid << " !" << endl;
+		msgid = msgget(key,0); //if the daemon was already running at start time
+		if (msgid == -1) {
+			cout << "Failed to contact daemon" << endl;
+		}
 	}
 
 	while (!quit){
