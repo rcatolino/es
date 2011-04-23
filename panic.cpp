@@ -9,7 +9,9 @@
 using namespace std;
 
 void panic() {
-	pid_t pid = get_pid();	
+	pid_t pid;
+	key_t key;
+	get_pid(&pid,&key);	
 	kill(pid,SIGKILL);
 	exit(5);
 }

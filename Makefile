@@ -5,12 +5,12 @@ CCFLAGS=-Wall #Options de compilations
 EDLFLAGS=-Wall
 EXE=rip #Nom du binaire à construire
 
-OBJ=client.o command.o
-LIBS=
+OBJ=client.o command.o ripd.o io_tools.o panic.o 
+LIBS=-lpthread
 
 
 
-$(EXE): $(OBJ) $(LIBS)
+$(EXE): $(OBJ)
 	@echo building $<
 	$(EDL)  -o $(EXE) $(EDLFLAGS) $(OBJ) $(LIBS)
 	@echo done
@@ -22,5 +22,10 @@ $(EXE): $(OBJ) $(LIBS)
 	
 clean: 
 	@echo -n cleaning repository... 
-	@rm -rf *.o
+	@rm -f *.o
+	@rm -f .*.swp
+	@rm -f *~
+	@rm -f *.log
+	@rm -f *.pid
+	@rm -f *.out
 	@echo cleaned.

@@ -16,16 +16,11 @@
 
 using namespace std;
 
-static bool ini = false; //Has help been initialized yet?
 static bool daemon_started = false;
 
 static void parse(vector<string> command){
 	string body = command[0];
 	if(body == "help"){
-		if (! ini){
-			ini_help();
-			ini = true;
-		}
 		help(command);
 		return;
 	} else if(body == "start") {
@@ -42,6 +37,8 @@ static void parse(vector<string> command){
 		}
 	} else if(body == "add") {
 		add(command);
+	} else if(body == "display") {
+		display(command);
 	} else if(body == "remove") {
 		remove(command);
 	} else { 
@@ -52,10 +49,17 @@ static void parse(vector<string> command){
 
 int start(){
 	bool quit = false;
-	pid_t pid = get_pid();
+	key_t key;
+	pid_t pid;
+	get_pid(&pid,&key); //get pid of running daemon, 0 if no daemon running
 
 	cout << "Welcome to rip! Use help to get a list of available commands";
 	cout << endl;
+
+	ini_help(); //initialize help, cf command.cpp
+
+	read_index(); //restore index from hard drive
+
 	if (pid) {
 		daemon_started = true;
 		cout << "The daemon is up and running under the pid " << pid << " !" << endl;
@@ -86,6 +90,7 @@ int start(){
 		}
 
 	}
+	write_index();
 	return 1; //the user stopped the ihm
 }
 
