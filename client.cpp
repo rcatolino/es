@@ -9,6 +9,9 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <sys/msg.h>
+#include <signal.h>
+#include <sys/types.h>
 
 #include "client.h"
 #include "command.h"
@@ -17,7 +20,6 @@
 using namespace std;
 
 static bool daemon_started = false;
-static int msgid = 0;
 
 static void parse(vector<string> command){
 	string body = command[0];
@@ -37,13 +39,13 @@ static void parse(vector<string> command){
 			cout << "The daemon isn't running" << endl;
 		}
 	} else if(body == "add") {
-		add(command);
+		parse_params(command,&add_file);
 	} else if(body == "display") {
 		display(command);
 	} else if(body == "remove") {
 		remove(command);
 	} else if(body == "search") {
-		search(command,msgid);
+		parse_params(command,&search);
 	} else { 
 		cout << "unknown command : " <<command[0]<<endl;
 		cout << "Try 'help' for a list of available commands" <<endl;
@@ -62,13 +64,19 @@ int start(){
 	ini_help(); //initialize help
 
 	read_index(); //restore index from hard drive
-
+	int ret = kill(pid,0);
+	if (ret == -1) {
+		pid = 0;
+		write_pid(0,0);
+	}
 	if (pid) {
 		daemon_started = true;
 		cout << "The daemon is up and running under the pid " << pid << " !" << endl;
-		msgid = msgget(key,0); //if the daemon was already running at start time
+		int msgid = msgget(key,0); //if the daemon was already running at start time
 		if (msgid == -1) {
 			cout << "Failed to contact daemon" << endl;
+		} else { 
+			set_msgid(msgid);
 		}
 	}
 

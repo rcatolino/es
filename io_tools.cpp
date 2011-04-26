@@ -27,17 +27,36 @@ int write_pid(pid_t pid, key_t key){
 	return 0;
 }
 
-pid_t get_pid(pid_t* pid, key_t* key){
+pid_t get_pid(pid_t* pid_to_write, key_t* key_to_write){
+	pid_t pid;
+	key_t key;
+	cout << "coucou 1" << endl;
 	ifstream pid_file(ripd_pid,ios::in | ios::binary);
+	cout << "coucou 2" << endl;
 	if (pid_file.fail()){
 		pid_file.clear(ios::failbit);
-		*pid = 0;
-		*key = 0;
-		return -1;
+		cout << "coucou 3" << endl;
+		if (pid_to_write != NULL) {
+			*pid_to_write = 0;
+		}
+		if (key_to_write != NULL) {
+			*key_to_write = 0;
+		}
+		cout << "coucou 4" << endl;
+		return 0;
 	}
-	pid_file.read((char*) pid, sizeof(pid_t));
-	pid_file.read((char*) key, sizeof(key_t));
-	return *pid;
+	cout << "coucou 5" << endl;
+	pid_file.read((char*) &pid, sizeof(pid_t));
+	pid_file.read((char*) &key, sizeof(key_t));
+	cout << "coucou 6" << endl;
+
+	if (pid_to_write != NULL) {
+		*pid_to_write = pid;
+	}
+	if (key_to_write != NULL) {
+		*key_to_write = key;
+	}
+	return pid;
 }
 
 int dump(map<string,item> * items) {
