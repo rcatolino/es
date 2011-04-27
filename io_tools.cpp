@@ -14,7 +14,7 @@
 using namespace std;
 
 
-int write_pid(pid_t pid, key_t key){
+int write_pid(pid_t pid, key_t shm_key, key_t sem_key ){
 	ofstream pid_file(ripd_pid,ios::trunc | ios::binary | ios::out);
 	if (pid_file.fail()){
 		pid_file.clear(ios::failbit);
@@ -22,39 +22,36 @@ int write_pid(pid_t pid, key_t key){
 		return -1;
 	}
 	pid_file.write((char*) &pid, sizeof(pid));
-	pid_file.write((char*) &key, sizeof(key));
+	pid_file.write((char*) &shm_key, sizeof(key_t));
+	pid_file.write((char*) &sem_key, sizeof(key_t));
 	pid_file.close();
 	return 0;
 }
 
-pid_t get_pid(pid_t* pid_to_write, key_t* key_to_write){
+pid_t get_pid(pid_t* pid_to_write, key_t* shm_key_to_write, key_t* sem_key_to_write){ //I seriously lack imagination for those names...
 	pid_t pid;
-	key_t key;
-	cout << "coucou 1" << endl;
+	key_t shm_key;
+	key_t sem_key;
 	ifstream pid_file(ripd_pid,ios::in | ios::binary);
-	cout << "coucou 2" << endl;
-	if (pid_file.fail()){
+	if (pid_file.fail()){ //Can't read from file
 		pid_file.clear(ios::failbit);
-		cout << "coucou 3" << endl;
-		if (pid_to_write != NULL) {
-			*pid_to_write = 0;
-		}
-		if (key_to_write != NULL) {
-			*key_to_write = 0;
-		}
-		cout << "coucou 4" << endl;
-		return 0;
+			pid = 0;
+			shm_key = 0;
+			sem_key = 0;
+	} else { //Read from file
+		pid_file.read((char*) &pid, sizeof(pid_t));
+		pid_file.read((char*) &shm_key, sizeof(key_t));
+		pid_file.read((char*) &sem_key, sizeof(key_t));
 	}
-	cout << "coucou 5" << endl;
-	pid_file.read((char*) &pid, sizeof(pid_t));
-	pid_file.read((char*) &key, sizeof(key_t));
-	cout << "coucou 6" << endl;
 
 	if (pid_to_write != NULL) {
 		*pid_to_write = pid;
 	}
-	if (key_to_write != NULL) {
-		*key_to_write = key;
+	if (shm_key_to_write != NULL) {
+		*shm_key_to_write = shm_key;
+	}
+	if( sem_key_to_write != NULL) {
+		*sem_key_to_write = sem_key;
 	}
 	return pid;
 }

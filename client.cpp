@@ -4,14 +4,17 @@
 //	remove : remove file from the index (without removing it from hd
 //	get [file name] : download the file corresponding to "file name" or display 
 //	search -t type -n name : display a list of all the availables files of
-//				the given type and/or name (name can be a regexp)
+//				the given type and/or name (name could be a regexp)
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <sys/msg.h>
 #include <signal.h>
 #include <sys/types.h>
+#include <sys/shm.h>
+#include <sys/ipc.h>
 
 #include "client.h"
 #include "command.h"
@@ -54,9 +57,10 @@ static void parse(vector<string> command){
 
 int start(){
 	bool quit = false;
-	key_t key;
+	key_t sem_key;
+	key_t shm_key;
 	pid_t pid;
-	get_pid(&pid,&key); //get pid of running daemon, and key of msg box. 0 if no daemon running
+	get_pid(&pid,&shm_key,&sem_key); //get pid of running daemon, and keys. 0 if no daemon running
 
 	cout << "Welcome to rip! Use help to get a list of available commands";
 	cout << endl;
@@ -64,7 +68,7 @@ int start(){
 	ini_help(); //initialize help
 
 	read_index(); //restore index from hard drive
-	int ret = kill(pid,0);
+	int ret = kill(pid,0); //Verify wether the daemon is really running
 	if (ret == -1) {
 		pid = 0;
 		write_pid(0,0);
@@ -72,12 +76,23 @@ int start(){
 	if (pid) {
 		daemon_started = true;
 		cout << "The daemon is up and running under the pid " << pid << " !" << endl;
-		int msgid = msgget(key,0); //if the daemon was already running at start time
-		if (msgid == -1) {
-			cout << "Failed to contact daemon" << endl;
-		} else { 
-			set_msgid(msgid);
+	
+		int sh_semid = semget(sem_key,1,0);
+		if (sh_semid == -1) {
+			perror("client semget ");
 		}
+		if (semctl(sh_semid,0,SETVAL,0) == -1) {
+			perror("client sh_semid semctl ");
+		}
+		int shmid = shmget(shm_key,100,0);
+		if (shmid == -1) {
+			perror("client shmid ");
+		}
+		void* sh_mem = shmat(shmid,NULL,0);
+		if ((int)shmid == -1) {
+			perror("client shmat ");
+		}
+		set_ids(sh_semid, sh_mem);
 	}
 
 	while (!quit){

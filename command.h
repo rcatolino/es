@@ -7,7 +7,7 @@
 
 void help(vector<string> command);
 
-void set_msgid(int msgid);
+void set_ids(int sh_semid, void* sh_mem);
 
 void ini_help();
 

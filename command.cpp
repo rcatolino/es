@@ -4,13 +4,15 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <string>
 #include <map>
+#include <cstring>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <sys/sem.h>
+#include <sys/shm.h>
+#include <sys/ipc.h>
 
 #include "ripd.h"
 #include "io_tools.h"
@@ -22,10 +24,10 @@ using namespace std;
 static map<string,item> items;
 static unsigned int pending_op = 0;
 static map<string,string> help_list;
-static int msgid = 0;
-static fstream pipe_out;
+static int sh_semid = 0;
+static void* sh_mem;
 
-void set_msgid(int new_msgid) {msgid = new_msgid;}
+void set_ids(int new_sh_semid, void* new_sh_mem) {sh_semid = new_sh_semid; sh_mem = new_sh_mem;}
 
 void ini_help(){
 	string help = "help [command] : Display help about the required command\n";
@@ -132,25 +134,43 @@ bool start_daemon(){
 	} else {
 		//parent
 		if (semop(semid,&take,1) == -1) {
-			perror("semtake failed "); // block parent until child put a token in the semaphore
+			perror("semtake failed "); // block itself until child put a token in the semaphore : wait for child to write in sync file
 			cout << "semid = " << semid << endl;
 		}
 		semctl(semid,0,IPC_RMID);
 		cout << "Daemon started successfully!" << endl;
-		pipe_out.open("rip.com",ios::out);
-		if (pipe_out.fail()){
-			cout << "rip : Failed to open pipe" << endl;
+		key_t shm_key;
+		key_t sem_key;
+		if (get_pid(NULL,&shm_key,&sem_key) == 0){
+			cout << "Error while getting keys" << endl;
 		}
-/*		int write_end;
-		get_pid(NULL,&write_end);
-		cout << "With write_end = " << hex << key << endl;
-		cout << "And msgid = " << dec << msgid << endl;
-		if (msgid == -1) {
-			cout << "Failed to contact daemon" << endl;
+		sh_semid = semget(sem_key,1,0);
+		if (sh_semid == -1) {
+			perror("client semget ");
 		}
-*/		return true;
+		if (semctl(sh_semid,0,SETVAL,0) == -1) {
+			perror("client sh_semid semctl ");
+		}
+		int shmid = shmget(shm_key,100,0);
+		if (shmid == -1) {
+			perror("client shmid ");
+		}
+		sh_mem = shmat(shmid,NULL,0);
+		if ((int)shmid == -1) {
+			perror("client shmat ");
+		}
+		return true;
 	}
 	return true;
+}
+void * write(void * shm, string data) {
+	int data_size = data.length()+1;
+	((int*)shm)[0] = data_size; 
+	char * dest = &((char*)shm)[4];
+	strcpy(dest,data.c_str());	
+
+	return &((char*)shm)[4+data_size];
+
 }
 
 unsigned int search(vector<string> * names, vector<item> * elements, string name) {
@@ -175,47 +195,33 @@ unsigned int search(vector<string> * names, vector<item> * elements, string name
 }
 
 void search(string name, item to_search) {
+	struct sembuf give = {0,1,0};
 	//Unlike display, this command search on remote ends, therefore the daemon should be up and running
-	cout << "coucou 0" << endl;
-	if ( get_pid(NULL,NULL) <= 0 ) {
+	if ( get_pid(NULL) <= 0 ) {
 		//couldn't read from file, or no daemon running. Maybe it hasn't been created yet.
 		cout << "The daemon doesn't seem to be running, you have to start it before searching files" << endl;
 		return;
 	}
-	cout << "coucou 7" << endl;
 	if (!to_search.message.empty()){
 		cout << "Discarding wrong option '-m'!" << endl;
 	}
-/*	if (msgid == 0) {
-		//we don't have the message box id, not supposed to be possible...
-		cout << "Error while contacting daemon" << endl;
+	int name_size = name.length()+1;
+	int type_size = to_search.type.length()+1;
+	if (name_size + type_size + 8 >= 100) {
+		//not enough room in shm
+		cout << "Name and/or type too long" << endl;
 		return;
 	}
-	struct mess test = {to_search.name.c_str(),to_search.type.c_str(),to_search.path.c_str(),0,to_search.message.c_str()};
-	struct msgfile mes = {1,test};
-	if (msgsnd(msgid, &mes, sizeof(to_search),0) == -1) {
-		perror("msgsnd");
-	} else {
-		cout << "Message send" << endl;
-	}*/
-	cout << name << endl;
-	cout << to_search.type << endl;
 	
-	if (!name.empty()) {
-		pipe_out << 1 << endl;
-		pipe_out << name << endl;
-	}
-	if (pipe_out.fail()) {
-		cout << "Failed to write in pipe 1" << endl;
-	}
-	if (!to_search.type.empty()) {
-		pipe_out << 2 << endl;
-		pipe_out << to_search.type << endl;
-	}
-	if (pipe_out.fail()) {
-		cout << "Failed to write in pipe 2" << endl;
-	}
-	pipe_out << 0 << endl;
+	void * dest = sh_mem;
+	dest = write(dest, name);
+	dest = write(dest, to_search.type);
+	
+	if (semop(sh_semid,&give,1) == -1) {
+		perror("semgive to sh_semid failed ");
+	} //we wrote somthing -> wake up daemon
+
+
 }
 /*
 	//Unlike display, this command search on remote ends, therefore the daemon should be up and running
@@ -328,10 +334,6 @@ int parse_params(vector<string> command, void (*callback)(string, item)) {
 				option = true;
 			}
 		}	
-		cout << name << endl;
-		cout << to_add.type << endl;
-		cout << to_add.path << endl;
-		cout << to_add.message << endl;
 		callback(name, to_add);
 	return 0;
 }

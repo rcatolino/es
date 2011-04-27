@@ -16,9 +16,9 @@
 
 using namespace std;
 
-int write_pid(pid_t pid, key_t key);
+int write_pid(pid_t pid, key_t shm_key = 0, key_t sem_key = 0 );
 
-pid_t get_pid(pid_t* pid, key_t* key);
+pid_t get_pid(pid_t* pid, key_t* shm_key = NULL, key_t* sem_key = NULL );
 
 void display_element(string name, item * element);
 

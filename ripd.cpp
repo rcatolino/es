@@ -3,12 +3,13 @@
 #include <unistd.h>
 #include <fstream>
 #include <sys/types.h>
-#include <sys/ipcs.h>
+#include <sys/ipc.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <cstdlib>
+#include <cstring>
 #include <pthread.h>
 #include <iostream>
 #include <errno.h>
@@ -20,7 +21,9 @@ using namespace std;
 static struct sigaction end; 
 static pid_t sid;
 static pthread_t listening_thread;
-static fstream pipe_in;
+//static fstream pipe_in;
+static int sh_semid;
+static int shmid;
 static ofstream out;
 static tcpserver data_server;
 static tcpserver request_server;
@@ -28,10 +31,10 @@ static tcpserver request_server;
 static void end_daemon(int signum){
 	out << "endind daemon" << endl;
 	write_pid(0,0);
-	out << "closing pipe" << endl;
-	pipe_in.close();
-	out << "deleting pipe" << endl;
-	remove("rip.com");
+	out << "Deleting shm" << endl;
+	shmctl(shmid,IPC_RMID,NULL);
+	out << "Deleting sem" << endl;
+	semctl(sh_semid,0,IPC_RMID);
 	exit (EXIT_SUCCESS);
 }
 static int ini_handler() {
@@ -83,19 +86,13 @@ int search() {
 	string type;
 
 	while (desc != 0) {
-		pipe_in >> desc; 
-		if (pipe_in.fail()) {
-			out << "Failed to read from pipe search 1" << endl;
-		}
 		switch (desc) {
 			case 0 :  //nothing to read left;
 				break;
 			case 1 :  // name :
-				pipe_in >> name;
 				out << "name : " << name << endl;
 				break;
 			case 2 :
-				pipe_in >> type;
 				break;
 			default :
 				return -1;
@@ -111,6 +108,15 @@ int search() {
 		return -1;
 	}*/
 	return 0;
+}
+void * read(void* shm, string * data) {
+	int size = ((int*)shm)[0];
+	char * src = &((char*)shm)[4];
+	char new_data[size];
+	strncpy(new_data,src,size);
+	*data = new_data;
+
+	return &((char*)shm)[4+size];
 }
 
 int init_ripd(int semid) {
@@ -130,36 +136,41 @@ int init_ripd(int semid) {
 	pid_t pid = getpid(); //get it's pid
 
 	struct sembuf give = {0,1,0};
+	struct sembuf take = {0,-1,0};
 	out << "coucou, comment ca va?" << endl;
-/*	int piperet = mkfifo("rip.com",0600); //create named pipe
-	if (piperet == -1) {
-		//fail to create fifo : die
-		perror("pipe ");
-		end_daemon(-5);
+	key_t shm_key = ftok("rip",'B');
+	key_t sem_key = ftok("rip",'C');
+
+	sh_semid = semget(sem_key,1, IPC_CREAT | IPC_EXCL | 0660);
+	if (sh_semid == -1) {
+		perror("daemon semget ");
 	}
-*/ //Pipes ain't such a good idea... Let's try shm & sem!
+	if (semctl(sh_semid,0,SETVAL,0) == -1) {
+		perror("daemon sh_semid semctl ");
+	}
+	shmid = shmget(shm_key,100,IPC_CREAT | IPC_EXCL | 0660);
+	if (shmid == -1) {
+		perror("daemon shmid ");
+	}
+	void * sh_mem = shmat(shmid,NULL,0);
+	if ((int)shmid == -1) {
+		perror("daemon shmat ");
+	}
 	
 	out << "bien et toi?" << endl;
 
-	int ret = write_pid(pid,0); //write end of pipe
+	int ret = write_pid(pid,shm_key,sem_key); //write keys
 	if(ret){
 		//We couldn't notify that we started the daemon successfuly =>
 		out << "Cannot write to ripd_pid file, stoping the daemon," << endl;
 		out << "please ensure you have write permission and try again" << endl;
 		end_daemon(-6);
 	}
-
 	if (semop(semid,&give,1) == -1) {  //continue parent
 		perror("semgive failed "); 
 	}
-
-	pipe_in.open("rip.com", ios::in); //open it
-	if (pipe_in.fail()) {
-		out << "ripd : Failed to open pipe" << endl;
-	}
-
 	if (ini_handler() == -1) {
-		out << "Failed to declare end or pipe handler" << endl;
+		out << "Failed to declare end handler" << endl;
 		end_daemon(-4);//fail to declare end signal handler
 	}
 	data_server.ini(8080);
@@ -174,14 +185,21 @@ int init_ripd(int semid) {
 	string name;
 	string type;
 	for(;;){
-		int type;
-		pipe_in >> type;
+		//int type;
+		out << "Now waiting for message" << endl;
+		if (semop(sh_semid,&take,1) == -1) {
+			perror("semtake from sh_semid failed ");
+			sleep(1); //So that ripd doesn't go mad on failure
+		}
+//		pipe_in >> type;
 		out << "Message received" << endl;
-		if (pipe_in.fail()) {
-			out << "Failed to read from pipe 1" << endl;
-			pipe_in.clear();
-		} else {
-			out << "Type = " << type << endl;
+		void * src = sh_mem;
+		src = read(src,&name);
+		src = read(src,&type);
+		out << name << endl;
+		out << type << endl;
+
+		/*
 			switch (type) {
 				case 1 :
 					search();
@@ -189,8 +207,7 @@ int init_ripd(int semid) {
 
 				default :
 					out << "Wrong frame type" << endl;
-			}
-		}
+		*/
 	}
 	out << "daemon terminated" << endl;
 	end_daemon(0);
