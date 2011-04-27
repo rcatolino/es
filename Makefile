@@ -5,7 +5,7 @@ CCFLAGS=-Wall #Options de compilations
 EDLFLAGS=-Wall
 EXE=rip #Nom du binaire à construire
 
-OBJ=client.o command.o ripd.o io_tools.o panic.o 
+OBJ=client.o command.o ripd.o io_tools.o panic.o tcpserver.o
 LIBS=-lpthread
 
 

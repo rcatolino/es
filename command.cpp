@@ -23,6 +23,7 @@ static map<string,item> items;
 static unsigned int pending_op = 0;
 static map<string,string> help_list;
 static int msgid = 0;
+static fstream pipe_out;
 
 void set_msgid(int new_msgid) {msgid = new_msgid;}
 
@@ -136,15 +137,18 @@ bool start_daemon(){
 		}
 		semctl(semid,0,IPC_RMID);
 		cout << "Daemon started successfully!" << endl;
-		key_t key;
-		get_pid(NULL,&key);
-		msgid = msgget(key,0); 
-		cout << "With key = " << hex << key << endl;
+		pipe_out.open("rip.com",ios::out);
+		if (pipe_out.fail()){
+			cout << "rip : Failed to open pipe" << endl;
+		}
+/*		int write_end;
+		get_pid(NULL,&write_end);
+		cout << "With write_end = " << hex << key << endl;
 		cout << "And msgid = " << dec << msgid << endl;
 		if (msgid == -1) {
 			cout << "Failed to contact daemon" << endl;
 		}
-		return true;
+*/		return true;
 	}
 	return true;
 }
@@ -182,20 +186,36 @@ void search(string name, item to_search) {
 	if (!to_search.message.empty()){
 		cout << "Discarding wrong option '-m'!" << endl;
 	}
-	if (msgid == 0) {
+/*	if (msgid == 0) {
 		//we don't have the message box id, not supposed to be possible...
 		cout << "Error while contacting daemon" << endl;
 		return;
 	}
 	struct mess test = {to_search.name.c_str(),to_search.type.c_str(),to_search.path.c_str(),0,to_search.message.c_str()};
 	struct msgfile mes = {1,test};
-	cout << msgid << endl;
-	cout << sizeof(to_search) << endl;
 	if (msgsnd(msgid, &mes, sizeof(to_search),0) == -1) {
 		perror("msgsnd");
 	} else {
 		cout << "Message send" << endl;
+	}*/
+	cout << name << endl;
+	cout << to_search.type << endl;
+	
+	if (!name.empty()) {
+		pipe_out << 1 << endl;
+		pipe_out << name << endl;
 	}
+	if (pipe_out.fail()) {
+		cout << "Failed to write in pipe 1" << endl;
+	}
+	if (!to_search.type.empty()) {
+		pipe_out << 2 << endl;
+		pipe_out << to_search.type << endl;
+	}
+	if (pipe_out.fail()) {
+		cout << "Failed to write in pipe 2" << endl;
+	}
+	pipe_out << 0 << endl;
 }
 /*
 	//Unlike display, this command search on remote ends, therefore the daemon should be up and running
