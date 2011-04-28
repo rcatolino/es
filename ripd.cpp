@@ -25,8 +25,8 @@ static pthread_t listening_thread;
 static int sh_semid;
 static int shmid;
 static ofstream out;
-static tcpserver data_server;
-static tcpserver request_server;
+static tcpserver data_server("data_out");
+static tcpserver request_server("request_out");
 
 static void end_daemon(int signum){
 	out << "endind daemon" << endl;
@@ -35,6 +35,11 @@ static void end_daemon(int signum){
 	shmctl(shmid,IPC_RMID,NULL);
 	out << "Deleting sem" << endl;
 	semctl(sh_semid,0,IPC_RMID);
+	out << "killing data_server" << endl;
+	data_server.~tcpserver();
+	out << "killing request_server" << endl;
+	request_server.~tcpserver();
+	out << "All clear!" << endl;
 	exit (EXIT_SUCCESS);
 }
 static int ini_handler() {
@@ -60,7 +65,7 @@ void* thread_action(void* out) {
 
 }
 void* send_search(void* params) {
-	tcpserver send_server;
+	tcpserver send_server("tcp_out");
 	int ret = send_server.ini(8081);
 	if ( ret != 0) {
 		perror("server ini ");
@@ -185,13 +190,11 @@ int init_ripd(int semid) {
 	string name;
 	string type;
 	for(;;){
-		//int type;
 		out << "Now waiting for message" << endl;
 		if (semop(sh_semid,&take,1) == -1) {
 			perror("semtake from sh_semid failed ");
 			sleep(1); //So that ripd doesn't go mad on failure
 		}
-//		pipe_in >> type;
 		out << "Message received" << endl;
 		void * src = sh_mem;
 		src = read(src,&name);
@@ -213,3 +216,4 @@ int init_ripd(int semid) {
 	end_daemon(0);
 	return 0;
 }
+
