@@ -68,7 +68,7 @@ int start(){
 	ini_help(); //initialize help
 
 	read_index(); //restore index from hard drive
-	int ret = kill(pid,0); //Verify wether the daemon is really running
+	int ret = kill(pid,0); //Verify whether the daemon is really running
 	if (ret == -1) {
 		pid = 0;
 		write_pid(0,0);

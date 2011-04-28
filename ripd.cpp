@@ -21,12 +21,9 @@ using namespace std;
 static struct sigaction end; 
 static pid_t sid;
 static pthread_t listening_thread;
-//static fstream pipe_in;
 static int sh_semid;
 static int shmid;
 static ofstream out;
-static tcpserver data_server("data_out");
-static tcpserver request_server("request_out");
 
 static void end_daemon(int signum){
 	out << "endind daemon" << endl;
@@ -35,10 +32,6 @@ static void end_daemon(int signum){
 	shmctl(shmid,IPC_RMID,NULL);
 	out << "Deleting sem" << endl;
 	semctl(sh_semid,0,IPC_RMID);
-	out << "killing data_server" << endl;
-	data_server.~tcpserver();
-	out << "killing request_server" << endl;
-	request_server.~tcpserver();
 	out << "All clear!" << endl;
 	exit (EXIT_SUCCESS);
 }
@@ -79,8 +72,9 @@ void* send_search(void* params) {
 
 }
 void* wait_search(void * params) {
+	tcpserver * request_server = (tcpserver*) params; 
 	out << "listening thread launched" << endl;
-	request_server.wait(1);
+	request_server->wait(1);
 	pthread_exit(NULL);
 	return NULL;
 }
@@ -178,10 +172,12 @@ int init_ripd(int semid) {
 		out << "Failed to declare end handler" << endl;
 		end_daemon(-4);//fail to declare end signal handler
 	}
+	tcpserver data_server("data.out");
 	data_server.ini(8080);
+	tcpserver request_server("request.out");
 	request_server.ini(8081);
 	
-	if (pthread_create(&listening_thread, NULL, wait_search, NULL)) {
+	if (pthread_create(&listening_thread, NULL, wait_search, (void*)&request_server)) {
 		out << "error while creating thread" << endl;
 		return -1;
 	}
