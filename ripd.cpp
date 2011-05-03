@@ -9,29 +9,42 @@
 #include <sys/stat.h>
 #include <signal.h>
 #include <cstdlib>
+#include <vector>
 #include <cstring>
 #include <pthread.h>
-#include <iostream>
 #include <errno.h>
+#include "command.h"
 #include "ripd.h"
 #include "io_tools.h"
-#include "tcpserver.h"
+#include "if.h"
 
 using namespace std;
-static struct sigaction end; 
 static pid_t sid;
 static pthread_t listening_thread;
 static int sh_semid;
 static int shmid;
 static ofstream out;
+static struct sigaction end; 
+static tcpserver * data;
+static tcpserver * request;
 
 static void end_daemon(int signum){
 	out << "endind daemon" << endl;
 	write_pid(0,0);
+	out << "saving index" << endl;
+	write_index();
 	out << "Deleting shm" << endl;
 	shmctl(shmid,IPC_RMID,NULL);
 	out << "Deleting sem" << endl;
 	semctl(sh_semid,0,IPC_RMID);
+	out << "Killing data server" << endl;
+	data->~tcpserver();
+	out << "Killing request server" << endl;
+	request->~tcpserver();
+	out << "Canceling listening thread" << endl;
+	pthread_cancel(listening_thread);
+	out << "Joining with listening thread" << endl;
+	pthread_join(listening_thread,NULL);
 	out << "All clear!" << endl;
 	exit (EXIT_SUCCESS);
 }
@@ -48,6 +61,25 @@ static int ini_handler() {
 	return 0;
 }
 
+vector<string> parse(vector<string> command){
+	string body = command[0];
+	
+	if(body == "add") {
+		return parse_params(command,&add_file);
+	} else if(body == "display") {
+		return display(command);
+	} else if(body == "remove") {
+		return remove(command);
+	} else if(body == "search") {
+		return parse_params(command,&search);
+	}
+	vector<string> ret;
+	ret.push_back("unknown command : ");
+	ret.push_back(command[0]);
+	ret.push_back("\nTry 'help' for a list of available commands");
+	return ret;
+}
+
 void* thread_action(void* out) {
 	for (unsigned int i = 0 ; i < 5 ; i++) {
 		//(*(ofstream*) out) << "thread running" << endl;
@@ -57,69 +89,94 @@ void* thread_action(void* out) {
 	return NULL;
 
 }
-void* send_search(void* params) {
-	tcpserver send_server("tcp_out");
-	int ret = send_server.ini(8081);
-	if ( ret != 0) {
-		perror("server ini ");
-		pthread_exit(NULL);
-		return NULL;
-	}
-	//send_server.send((string *)params);
-
-	pthread_exit(NULL);
-	return NULL;
-
-}
 void* wait_search(void * params) {
 	tcpserver * request_server = (tcpserver*) params; 
 	out << "listening thread launched" << endl;
+	if(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL) == -1){
+		out << "bad arg for setcanceltype" << endl;
+	}
 	request_server->wait(1);
 	pthread_exit(NULL);
 	return NULL;
 }
-
-int search() {
-	int desc = 1;
-	string name;
-	string type;
-
-	while (desc != 0) {
-		switch (desc) {
-			case 0 :  //nothing to read left;
-				break;
-			case 1 :  // name :
-				out << "name : " << name << endl;
-				break;
-			case 2 :
-				break;
-			default :
-				return -1;
-		}
-	}
-//	string params[] = {name,type};
-	out << name << endl;
-	out << type << endl;
-
-/*
-	if (pthread_create(&thread, NULL, send_search, (void*) params)) {
-		out << "error while creating thread" << endl;
-		return -1;
-	}*/
+int request_received(string name, string address) {
 	return 0;
 }
-void * read(void* shm, string * data) {
-	int size = ((int*)shm)[0];
-	char * src = &((char*)shm)[4];
-	char new_data[size];
-	strncpy(new_data,src,size);
-	*data = new_data;
 
-	return &((char*)shm)[4+size];
+int write(void* sh_mem, vector<string> data) {
+	void * shm = sh_mem;
+	struct sembuf give = {0,1,0};
+	struct sembuf take = {0,-1,0};
+	int sum = 0;
+	int data_size;
+
+	for (unsigned int i = 0; i<data.size(); i++) {
+		data_size = data[i].length()+1;
+		if (data_size == 0) { break; } // this string is empty, ignore it
+		sum += data_size + 4;
+		if (sum >= 95) {
+			out << "Splitting command" << endl;
+			((int*)shm)[0] = -1; //notice remote end that there is more to read 
+			semop(sh_semid,&give,1); //unblock remote end
+			shm = sh_mem; //move cursor to the begining of memory block
+			sum = data_size +4; // reinit the number of bytes written
+			semop(sh_semid,&take,1); //block itself until it is safe to write again
+		}
+		((int*)shm)[0] = data_size;
+		char * dest = &((char*)shm)[4];
+		strcpy(dest,data[i].c_str());	
+		shm = &((char*)shm)[4+data_size];
+	}
+	sum += 4;
+	if (sum >= 100) {
+		return sum-4;
+	} else {
+		((int*)shm)[0] = 0; // notice end of transmission 
+	}
+
+	if (semop(sh_semid,&give,1) == -1) {
+		perror("semgive to sh_semid failed ");
+		return -1;
+	} //we wrote somthing -> wake up daemon
+	return sum;
+
+}
+
+int read(void * sh_mem, vector<string> * data) {
+	void * shm = sh_mem;
+	struct sembuf take = {0,-1,0};
+	struct sembuf give = {0,1,0};
+	if (semop(sh_semid,&take,1) == -1) {
+		perror("semtake from sh_semid failed ");
+	}
+	int size = ((int*)shm)[0];
+	int sum = 4;
+	while (size != 0) {
+		if (size == -1) {
+			semop(sh_semid,&give,1);//remote end has more to write, unblock it
+			shm = sh_mem; //move the cursor
+			sum = 0; //reinit sum
+			semop(sh_semid,&take,1); //wait until the next memory block has been written
+			size = ((int*)shm)[0];
+		}
+		char * src = &((char*)shm)[4];
+		char new_data[size];
+		strncpy(new_data,src,size);
+		data->push_back(new_data);
+
+		shm = &((char*)shm)[4+size];
+		sum += size + 4;
+		if (sum >= 100) {
+			return sum-4;
+		}
+		size = ((int*)shm)[0];
+	}
+	return sum;
 }
 
 int init_ripd(int semid) {
 
+	read_index(); //restore index from hard drive
 	umask (0000);//changing file permission mask
 	out.open("ripd.out", ios::out | ios::trunc);// log
 	if (out.fail()){
@@ -135,7 +192,6 @@ int init_ripd(int semid) {
 	pid_t pid = getpid(); //get it's pid
 
 	struct sembuf give = {0,1,0};
-	struct sembuf take = {0,-1,0};
 	out << "coucou, comment ca va?" << endl;
 	key_t shm_key = ftok("rip",'B');
 	key_t sem_key = ftok("rip",'C');
@@ -173,40 +229,34 @@ int init_ripd(int semid) {
 		end_daemon(-4);//fail to declare end signal handler
 	}
 	tcpserver data_server("data.out");
-	data_server.ini(8080);
+	data = &data_server;
+	data_server.ini(DATA_PORT);
 	tcpserver request_server("request.out");
-	request_server.ini(8081);
+	request = &request_server;
+	request_server.ini(LISTENING_PORT);
 	
 	if (pthread_create(&listening_thread, NULL, wait_search, (void*)&request_server)) {
 		out << "error while creating thread" << endl;
-		return -1;
 	}
+	sleep(1);
+	tcpclient client("client.out");
+	int right_client = client.join("127.0.0.1",LISTENING_PORT);
+	set_io(&out,data,request,&client,right_client,0);
+
 	out << "ripd working" << endl;
 
-	string name;
-	string type;
 	for(;;){
 		out << "Now waiting for message" << endl;
-		if (semop(sh_semid,&take,1) == -1) {
-			perror("semtake from sh_semid failed ");
-			sleep(1); //So that ripd doesn't go mad on failure
-		}
-		out << "Message received" << endl;
+		vector<string> data;
 		void * src = sh_mem;
-		src = read(src,&name);
-		src = read(src,&type);
-		out << name << endl;
-		out << type << endl;
-
-		/*
-			switch (type) {
-				case 1 :
-					search();
-				break;
-
-				default :
-					out << "Wrong frame type" << endl;
-		*/
+		read(src,&data);
+		out << "Message received" << endl;
+		for (unsigned int i = 0; i<data.size(); i++) {
+			out << data[i] << endl;
+		}
+		
+		vector<string> response = parse(data);
+		write(sh_mem,response);
 	}
 	out << "daemon terminated" << endl;
 	end_daemon(0);

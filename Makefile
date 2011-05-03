@@ -5,7 +5,7 @@ CCFLAGS=-Wall #Options de compilations
 EDLFLAGS=-Wall
 EXE=rip #Nom du binaire à construire
 
-OBJ=client.o command.o ripd.o io_tools.o panic.o tcpserver.o
+OBJ=client.o command.o ripd.o io_tools.o panic.o tcpserver.o tcpclient.o
 LIBS=-lpthread
 
 
@@ -29,3 +29,7 @@ clean:
 	@rm -f *.pid
 	@rm -f *.out
 	@echo cleaned.
+	
+coffee :
+	@echo You go to work!
+	@vi -p tcpserver.cpp tcpserver.h tcpclient.cpp tcpclient.h ripd.cpp ripd.h command.cpp command.h io_tools.cpp io_tools.h client.cpp if.h

@@ -6,6 +6,7 @@
 
 #include <sys/types.h>
 #include <string>
+#include <vector>
 #include <map>
 #include "if.h"
 
@@ -23,6 +24,7 @@ pid_t get_pid(pid_t* pid, key_t* shm_key = NULL, key_t* sem_key = NULL );
 void display_element(string name, item * element);
 
 int dump(map<string,item> * items);
+
 int restore(map<string,item> * items);
 
 #endif
