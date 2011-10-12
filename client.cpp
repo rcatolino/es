@@ -41,7 +41,7 @@ static int ini_handler() {
 	return ret1;
 }
 
-int write(vector<string> data) {
+static int write(vector<string> data) {
 	void * shm = sh_mem;
 	struct sembuf give = {0,1,0};
 	struct sembuf take = {0,-1,0};
@@ -80,7 +80,7 @@ int write(vector<string> data) {
 
 }
 
-int read(vector<string> * data) {
+static int read(vector<string> * data) {
 	void * shm = sh_mem;
 	struct sembuf take = {0,-1,0};
 	struct sembuf give = {0,1,0};
@@ -129,7 +129,7 @@ static void parse(vector<string> command){
 		} else {
 			cout << "The daemon isn't running" << endl;
 		}
-	} else if(body == "add" || body == "display" || body == "remove" || body == "search" ) {
+	} else if(body == "add" || body == "display" || body == "remove" || body == "search" || body == "get") {
 		if ( get_pid(NULL) <= 0 ) {
 			//couldn't read from file, or no daemon running. Maybe it hasn't been created yet.
 			cout << "The daemon doesn't seem to be running, you have to start it before searching files" << endl;

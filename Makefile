@@ -30,6 +30,6 @@ clean:
 	@rm -f *.out
 	@echo cleaned.
 	
-coffee :
+coffee : clean
 	@echo You go to work!
 	@vi -p tcpserver.cpp tcpserver.h tcpclient.cpp tcpclient.h ripd.cpp ripd.h command.cpp command.h io_tools.cpp io_tools.h client.cpp if.h

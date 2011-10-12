@@ -20,9 +20,9 @@ int start_daemon(int * sh_semid, void** sh_mem);
 
 bool stop_daemon();
 
-vector<string> add_file(string name, item to_add);
+vector<string> add_file(string name, item to_add, string action);
 
-vector<string> parse_params(vector<string> command, vector<string> (*callback)(string, item));
+vector<string> parse_params(vector<string> command, vector<string> (*callback)(string, item, string));
 
 vector<string> display(vector<string> command);
 
@@ -30,11 +30,9 @@ vector<string> remove(vector<string> command);
 
 void write_index();
 
-int write(vector<string> data);
-
 void read_index();
 
-vector<string> search(string name, item to_search);
+vector<string> search(string name, item to_search, string action);
 
 unsigned int search(vector<string> * names, vector<item> * elements, string name);
 

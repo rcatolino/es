@@ -6,13 +6,13 @@
 
 #define LISTENING_PORT 8080
 #define DATA_PORT 8081
-
+#define BLOCK_SIZE 2048
 using namespace std;
 struct item {
 	string name;
 	string type;
 	string path;
-	long size;
+	unsigned long size;
 	string message;
 };
 struct mess {

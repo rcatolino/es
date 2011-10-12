@@ -9,7 +9,7 @@
 
 using namespace std;
 const int max_size = 5;
-const int BUFF = 200;
+const int BUFF = 300;
 struct file_details {
 	int file_length;//bytes
 	int	packet_length;//bytes
@@ -33,6 +33,7 @@ class tcpserver {
 		int read_fd(struct file_details* details, int file_socket);
 		void thread_collector();
 		void request(int index);
+		void dl_file(int socket);
 
 		fstream data;
 		

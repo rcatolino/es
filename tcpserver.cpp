@@ -14,6 +14,7 @@
 #include <cstring>
 #include <fstream>
 #include "ripd.h"
+#include "if.h"
 #include "tcpserver.h"
 
 #define MAX_CON 6
@@ -203,19 +204,56 @@ void tcpserver::request(int index) {
 			data << "Connection closed by peer" << endl;
 			break;
 		}
-		string command[4];
+		string command[10];
 		string disp;
+		data << "Char received : " << ret << "on socket : " << it << endl;
 		int j = 0;
 		int i = 0;
+		int u = 0;
 		do {
 			for (; i<ret && req[i]!='\0' ; i++) {
 			command[j] += req[i];
 			}
-		i++;
-		data << command[j] << endl;
-		} while (command[j++] != "end" && j<4 && i<ret);
-		if ( command[0] == "down" ) {
+			i++;
+			if (command[j].empty()) {
+			} else {
+				data << command[j] << endl;
+				u = j;
+				j++;
+			}
+		} while (command[u] != "end" && i<ret);
+		if ( command[0] == "search" ) {
+			request_received( command[1], command[2]);
+		} else if ( command[0] == "ret") {
+			char size[100];
+			unsigned long lsize = ((unsigned long*)(command[4].c_str()))[0];
+			data << lsize << endl;
+			double dsize = (double)lsize;
+			data << dsize << endl;
+			string sf;
+			if (lsize > 1024*1024*1024) {
+				dsize /= 1024*1024*1024;
+				sf = " GB";
+			} else if (lsize > 1024*1024) {
+				dsize /= 1024*1024;
+				sf = " MB";
+			} else if (lsize > 1024) {
+				dsize /= 1024;
+				sf = " kB";
+			} else {
+				sf = " B";
+			}
+			sprintf(size,"%.1f",dsize);
+			ret_received( command[1], command[2], command[3], size + sf, command[5]);
+		} else if ( command[0] == "get") {
+			get_received( command[1], command[2]);
+		} else if ( command[0] == "POK" ) {
+			resp_received ( "File doesn't exist\n" );
+		} else if ( command[0] == "OK" ) {
+			resp_received ( "Downloading file\n") ;
+			dl_file(it);
 		}
+
 	}
 	sleep(1);
 	data << "Connection closed, closing socket..." << it << endl;
@@ -231,6 +269,57 @@ void tcpserver::request(int index) {
 	pthread_mutex_unlock(&join_mutex);
 	data << "Signal sent" << endl;
 	pthread_exit(NULL);
+}
+void tcpserver::dl_file(int it) {
+	string msg = "GO";
+	if (send(it,msg.c_str(),msg.length()+1,0) == -1) {
+		perror("send OK");
+		return;
+	}
+	off_t file_size;
+	ssize_t ret = recv(it, (void*)&file_size, sizeof(off_t), 0);
+	if (ret < (int)sizeof(off_t)){
+		shutdown(it,SHUT_RDWR);
+		return;
+	}
+	long bytes_read = 0;
+	char buff[BLOCK_SIZE];
+	ofstream file("lol", ios::out | ios::trunc);
+	for(;;) {
+		if (bytes_read>=file_size){
+			break;
+		}
+		ret = recv(it,buff,BLOCK_SIZE, 0);
+		if ( ret == -1 ) {
+			data << "Failed to read from socket" << endl;
+			switch (errno) {
+				case EBADF : 
+					data << "\tWrong file descriptor " << it << endl;
+					break;
+				case ECONNREFUSED :
+					data << "\tConnection refused" << endl;
+					break;
+				case EINTR :
+					data << "\tReception interupted by signal" << endl;
+					break;
+				case EINVAL :
+					data << "\tInvalid argument" << endl;
+					break;
+				case ENOTSOCK :
+					data << "\tThe descriptor isn't a socket" << endl;
+					break;
+			}
+			break;
+		} else if ( ret == 0) {
+			data << "Connection closed by peer" << endl;
+			break;
+		}
+		bytes_read += ret;
+		file.write(buff,ret);
+	}
+	shutdown(it,SHUT_RDWR);
+	close(it);
+	
 }
 void* tcpserver::start_thread_request(void* args) {
 	struct thread_params * arguments = (thread_params*)args;

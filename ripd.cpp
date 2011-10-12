@@ -27,6 +27,8 @@ static ofstream out;
 static struct sigaction end; 
 static tcpserver * data;
 static tcpserver * request;
+static tcpclient * client;
+static void * sh_mem;
 
 static void end_daemon(int signum){
 	out << "endind daemon" << endl;
@@ -70,7 +72,7 @@ vector<string> parse(vector<string> command){
 		return display(command);
 	} else if(body == "remove") {
 		return remove(command);
-	} else if(body == "search") {
+	} else if(body == "search" || body == "get") {
 		return parse_params(command,&search);
 	}
 	vector<string> ret;
@@ -100,10 +102,37 @@ void* wait_search(void * params) {
 	return NULL;
 }
 int request_received(string name, string address) {
+	vector<string> names;
+	vector<item> items;
+	int socket = client->join(address,LISTENING_PORT);
+	if (search(&names,&items,name) > 0) {
+		for (unsigned int i = 0; i<items.size(); i++) {
+			client->send_results(socket,items[i]);
+		}
+	} else {
+		struct item nothing;
+		client->send_results(socket,nothing);
+	}
+	client->leave(socket);
 	return 0;
 }
 
-int write(void* sh_mem, vector<string> data) {
+void get_received(string name, string address) {
+	vector<string> names;
+	vector<item> items;
+	int socket = client->join(address,LISTENING_PORT);
+	if (search(&names,&items,name) >0) {
+		for (unsigned int i = 0; i<items.size(); i++) {
+			client->send_file(socket,items[i].path);
+		}
+	} else {
+		client->send_file(socket,"");
+	}
+	client->leave(socket);
+	return;
+}
+
+static int write(vector<string> data) {
 	void * shm = sh_mem;
 	struct sembuf give = {0,1,0};
 	struct sembuf take = {0,-1,0};
@@ -142,7 +171,7 @@ int write(void* sh_mem, vector<string> data) {
 
 }
 
-int read(void * sh_mem, vector<string> * data) {
+static int read(vector<string> * data) {
 	void * shm = sh_mem;
 	struct sembuf take = {0,-1,0};
 	struct sembuf give = {0,1,0};
@@ -172,6 +201,32 @@ int read(void * sh_mem, vector<string> * data) {
 		size = ((int*)shm)[0];
 	}
 	return sum;
+}
+void resp_received(string message){
+	vector<string> data;
+	data.push_back(message);
+	write(data);
+}
+void ret_received(string name, string type, string message, string ssize, string address){
+	vector<string> data;
+	if (name == "end" && ssize == "0.0 B") {
+		data.push_back("Sorry, no file was found corresponding to your description\n");
+	} else {
+		data.push_back(name + " : \n");
+		if (type != "empty") {
+			data.push_back("\ttype : " + type + "\n");
+		}
+		data.push_back("\tsize : " + ssize + "\n");
+		if (message != "empty") {
+			data.push_back("\tnote : " + message + "\n");
+		}
+
+		out << name << endl;
+		out << ssize << endl;
+		out << type << endl;
+		out << message << endl;
+	}
+	write (data);
 }
 
 int init_ripd(int semid) {
@@ -207,7 +262,7 @@ int init_ripd(int semid) {
 	if (shmid == -1) {
 		perror("daemon shmid ");
 	}
-	void * sh_mem = shmat(shmid,NULL,0);
+	sh_mem = shmat(shmid,NULL,0);
 	if ((int)shmid == -1) {
 		perror("daemon shmat ");
 	}
@@ -221,9 +276,6 @@ int init_ripd(int semid) {
 		out << "please ensure you have write permission and try again" << endl;
 		end_daemon(-6);
 	}
-	if (semop(semid,&give,1) == -1) {  //continue parent
-		perror("semgive failed "); 
-	}
 	if (ini_handler() == -1) {
 		out << "Failed to declare end handler" << endl;
 		end_daemon(-4);//fail to declare end signal handler
@@ -231,6 +283,9 @@ int init_ripd(int semid) {
 	tcpserver data_server("data.out");
 	data = &data_server;
 	data_server.ini(DATA_PORT);
+	if (semop(semid,&give,1) == -1) {  //continue parent
+		perror("semgive failed "); 
+	}
 	tcpserver request_server("request.out");
 	request = &request_server;
 	request_server.ini(LISTENING_PORT);
@@ -239,24 +294,27 @@ int init_ripd(int semid) {
 		out << "error while creating thread" << endl;
 	}
 	sleep(1);
-	tcpclient client("client.out");
-	int right_client = client.join("127.0.0.1",LISTENING_PORT);
-	set_io(&out,data,request,&client,right_client,0);
+	tcpclient request_client("client.out");
+	client = &request_client;
+	int right_client = request_client.join("127.0.0.1",LISTENING_PORT);
+	set_io(&out,data,request,&request_client,right_client,0);
 
 	out << "ripd working" << endl;
 
 	for(;;){
 		out << "Now waiting for message" << endl;
 		vector<string> data;
-		void * src = sh_mem;
-		read(src,&data);
+		read(&data);
 		out << "Message received" << endl;
 		for (unsigned int i = 0; i<data.size(); i++) {
 			out << data[i] << endl;
 		}
 		
 		vector<string> response = parse(data);
-		write(sh_mem,response);
+		if (!response.empty() && response[0]=="WAIT") {
+			continue;
+		}
+		write(response);
 	}
 	out << "daemon terminated" << endl;
 	end_daemon(0);

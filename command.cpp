@@ -198,7 +198,7 @@ unsigned int search(vector<string> * names, vector<item> * elements, string name
 	return 0;
 }
 
-vector<string> search(string name, item to_search) {
+vector<string> search(string name, item to_search, string action) {
 	vector<string> ret;
 	//Unlike display, this command search on remote ends, therefore the daemon should be up and running
 	
@@ -212,10 +212,10 @@ vector<string> search(string name, item to_search) {
 		ret.push_back("Name and/or type too long\n");
 		return ret;
 	}
-	if (client->send_request(right_client, name) == -1){
+	if (client->send_request(right_client, name, action) == -1){
 		ret.push_back("Failed to send request to right peer\n");
 	} else {
-		ret.push_back("Searching...\n");
+		ret.push_back("WAIT");
 	}
 	return ret;
 }
@@ -231,7 +231,7 @@ vector<string> search(string name, item to_search) {
 		msg
 */
 
-vector<string> add_file(string name, item to_add) {
+vector<string> add_file(string name, item to_add, string action) {
 	vector<string> ret;
 	if (to_add.path.empty()) {
 		ret.push_back("You must specify a file\n");
@@ -275,12 +275,12 @@ vector<string> add_file(string name, item to_add) {
 	return ret;
 }
 
-vector<string> parse_params(vector<string> command, vector<string> (*callback)(string, item)) {
+vector<string> parse_params(vector<string> command, vector<string> (*callback)(string, item, string)) {
 	unsigned int i = 1;
 	vector<string> ret;
 	item to_add = {"","","",0,""};
 	if (command.size() == 1) {
-		return callback("",to_add);
+		return callback("",to_add, command[0]);
 	}
 	if (command[i][0] == '-' && callback == &add_file){
 		ret.push_back("You must specify a file\n");
@@ -329,7 +329,7 @@ vector<string> parse_params(vector<string> command, vector<string> (*callback)(s
 		}
 	}	
 		
-	return callback(name, to_add);
+	return callback(name, to_add, command[0]);
 }
 
 vector<string> display_index(string name) {
